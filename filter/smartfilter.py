@@ -30,6 +30,7 @@ from scipy.signal import butter, lfilter
 from scipy.signal import freqz
 
 from enum import Enum    
+import unittest
 import logging
 
 logging.basicConfig(level=logging.DEBUG)
@@ -38,57 +39,23 @@ If you want to set the logging level from a command-line option such as:
   --log=INFO
 '''
 
-
-
-#-------------------
-def butter_bandpass(lowcut, highcut, fs, order=5):
-    """ generate filter coefficients
-        
-        lowcut, highcut = frequencies are in Hz.
-        fs - samples per second 
-    """
-    nyq = 0.5 * fs
-    low = lowcut / nyq
-    high = highcut / nyq
-    b, a = butter(order, [low, high], btype='band')
-    return b, a
- 
- 
-def butter_bandpass_filter(data, lowcut, highcut, fs, order=5):
-    """ apply a bandpass filter to data
-        lowcut, highcut, fs are all in Hz
-        returns an np.array?
-    """
-    nyq = 0.5 * fs
-    low = lowcut / nyq
-    high = highcut / nyq
-    b, a = butter(order, [low, high], btype='band')
-    
-    y = lfilter(b, a, data)
-    return y
-
 #------------------
 class SmartFilter:
-    """ """
+    """ Wrapper class for easy filtering of signal including:
+            low, high, bandpass, moving average, and threshold
+    """
     
-    class FilterType(Enum):
-        none   = 0
-        low    = 1
-        high   = 2
-        band   = 3
-        ave    = 4
-        thresh = 5
         
     def __init__(self):
         b = []
         a = []
-        self.filter_type = self.FilterType.none
+        self.filter_type = ''
         self.apply_map = {
-            self.FilterType.low    :  self.apply_IIR,
-            self.FilterType.high   :  self.apply_IIR,
-            self.FilterType.band   :  self.apply_IIR,
-            self.FilterType.ave    :  self.apply_moving_ave,
-            self.FilterType.thresh :  self.apply_thresh
+            'low'    :  self.apply_IIR,
+            'high'   :  self.apply_IIR,
+            'band'   :  self.apply_IIR,
+            'ave'    :  self.apply_moving_ave,
+            'thresh' :  self.apply_thresh
         }
     
     def apply(self,data):
@@ -100,7 +67,7 @@ class SmartFilter:
             lowcut, highcut = frequencies are in Hz.
             fs - samples per second 
         """        
-        self.filter_type = self.FilterType.band
+        self.filter_type = 'band'
         self.rate_hz = rate_hz
         self.order = order
         nyq = 0.5 * self.rate_hz
@@ -113,7 +80,7 @@ class SmartFilter:
             lowcut, highcut = frequencies are in Hz.
             fs - samples per second 
         """        
-        self.filter_type = self.FilterType.low
+        self.filter_type = 'low'
         self.rate_hz = fs
         self.order = order
         nyq = 0.5 * fs
@@ -121,12 +88,13 @@ class SmartFilter:
         self.b, self.a = butter(order, cut, btype='low')        
         
     def init_moving_ave(self, n):
-        self.filter_type = self.FilterType.ave
+        self.filter_type = 'ave'
         self.n = n
         
-    def apply_IIR(self):
+    def apply_IIR(self, data):
+        """ applies low, high, bandpass filter """
         filtered_data = lfilter(self.b, self.a, data)
-        
+        return filtered_data
         
     def apply_moving_ave(self, data):
         d = np.cumsum(data, dtype=float)
@@ -141,9 +109,7 @@ class SmartFilter:
         return filtered_data
 
     def plot(self):
-        if(self.filter_type in [self.FilterType.low, 
-                                self.FilterType.high, 
-                                self.FilterType.band ]):
+        if(self.filter_type in ['low', 'high', 'band']):
             # Plot the frequency response for a few different orders.
             plt.figure(1)
             plt.clf()
@@ -169,6 +135,78 @@ class SmartFilter:
     def __str__(self):
         return "SmartFilter"    
 
+#============================================================================
+class TestSmartFilter(unittest.TestCase):
+    """ Self testing of each method """
+    
+    @classmethod
+    def setUpClass(self):
+        """ runs once before ALL tests """
+        print("\n...........unit testing class SmartFilter..................")
+        #self.my_Crf = Crf()
+
+    def setUp(self):
+        """ runs once before EACH test """
+        pass
+
+    @unittest.skip
+    def test_init(self):
+        print("\n...testing init(...)")
+        pass
+    
+    @unittest.skip
+    def test_band(self):
+        print("\n...testing bandpass filter(...)")
+        
+        my_filt = SmartFilter()
+
+        # Sample rate and desired cutoff frequencies (in Hz).
+        fs = 5000.0
+        lowcut = 500.0
+        highcut = 1250.0
+        order =3
+        
+        # Plot the frequency response for a few different orders.
+        plt.figure(1)
+        plt.clf()
+        my_filt.init_band(lowcut, highcut, fs, order)
+        my_filt.plot()
+        plt.show()
+        
+        # Filter a noisy signal.
+        T = 0.05
+        nsamples = T * fs
+        t = np.linspace(0, T, nsamples, endpoint=False)
+        a = 0.02
+        f0 = 600.0
+        x = 0.1 * np.sin(2 * np.pi * 1.2 * np.sqrt(t))
+        x += 0.01 * np.cos(2 * np.pi * 312 * t + 0.1)
+        x += a * np.cos(2 * np.pi * f0 * t + .11)
+        x += 0.03 * np.cos(2 * np.pi * 2000 * t)
+        plt.figure(2)
+        plt.clf()
+        plt.plot(t, x, label='Noisy signal')        
+
+        y = my_filt.apply(x)
+        plt.plot(t, y, label='Filtered signal (%g Hz)' % f0)
+        plt.xlabel('time (seconds)')
+        plt.hlines([-a, a], 0, T, linestyles='--')
+        plt.grid(True)
+        plt.axis('tight')
+        plt.legend(loc='upper left')
+    
+        plt.show()
+        
+        pause = input('Press enter when complete: ')
+
+    def tearDown(self):
+        """ runs after each test """
+        pass
+    
+    @classmethod
+    def tearDownClass(self):
+        print("\n...........unit testing of class SimpleFilter complete..............\n")
+        
 #------------------------------------------------------------------------
 def load_file(fname):
     """ loads a csv file and places into a 2D np string array.
@@ -217,8 +255,8 @@ def filter_file(fname):
     fs = 17
     order = 6
     #my_filter.init_band(lowcut, highcut, fs, order)
-    #my_filter.init_low(highcut, fs, order)
-    my_filter.init_moving_ave(5)
+    my_filter.init_low(highcut, fs, order)
+    #my_filter.init_moving_ave(5)
     my_filter.plot()
     logging.info('filtering file:' + fname)
     header_list, data_string_ary_nd = load_file(fname)
