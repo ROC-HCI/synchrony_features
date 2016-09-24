@@ -42,7 +42,8 @@ If you want to set the logging level from a command-line option such as:
 #------------------
 class SmartFilter:
     """ Wrapper class for easy filtering of signal including:
-            low, high, bandpass, moving average, and threshold
+            low, high, bandpass, moving average, and threshold.
+            Can process a file or directory.
     """
     
         
@@ -90,6 +91,10 @@ class SmartFilter:
     def init_moving_ave(self, n):
         self.filter_type = 'ave'
         self.n = n
+
+    def init_thresh(self, thresh):
+        self.filter_type = 'thresh'
+        self.thresh = thresh
         
     def apply_IIR(self, data):
         """ applies low, high, bandpass filter """
@@ -103,9 +108,7 @@ class SmartFilter:
         return filtered_data
 
     def apply_thresh(self, data):
-        d = np.cumsum(data, dtype=float)
-        d[self.n:] = d[self.n:] - d[:-self.n]
-        filtered_data = d[self.n - 1:] / self.n            
+        filtered_data =  (data > self.thresh).astype(float)           
         return filtered_data
 
     def plot(self):
@@ -131,9 +134,14 @@ class SmartFilter:
             plt.axis('tight')
     
             #plt.show()        
+            
+    def filter_file(self,fname):
+        """ load a csv file """
 
     def __str__(self):
-        return "SmartFilter"    
+        s = "SmartFilter type: "
+        s += self.filter_type
+        return s
 
 #============================================================================
 class TestSmartFilter(unittest.TestCase):
@@ -255,7 +263,8 @@ def filter_file(fname):
     fs = 17
     order = 6
     #my_filter.init_band(lowcut, highcut, fs, order)
-    my_filter.init_low(highcut, fs, order)
+    #my_filter.init_low(highcut, fs, order)
+    my_filter.init_thresh(30)
     #my_filter.init_moving_ave(5)
     my_filter.plot()
     logging.info('filtering file:' + fname)
@@ -298,4 +307,5 @@ def do_all():
 #=============================================================================
 if __name__ == '__main__':
     filter_file('example/2016-03-16_10-05-49-922-annabanana.new.csv')
+    
     #filter_file('example/out_avg.csv')
