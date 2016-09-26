@@ -44,6 +44,9 @@ class SmartFilter:
     """ Wrapper class for easy filtering of signal including:
             low, high, bandpass, moving average, and threshold.
             Can process a file or directory.
+            
+            
+        TODO: consider proper thing to do with NANs
     """
     
         
@@ -220,7 +223,7 @@ def load_file(fname):
     """ loads a csv file and places into a 2D np string array.
         RETURNS:
            header
-           data
+           data[time, datafield]
     """
     
     logging.info('  loading file:' + fname)
@@ -228,7 +231,7 @@ def load_file(fname):
     data = []
     try:
         reader = csv.reader(f)
-        header = next(reader)[:-1] # Affectiva has a extra empty column
+        header = np.array(next(reader)[:-1]) # Affectiva has a extra empty column
         for row in reader:
             # deal with Affectiva 'bug' - no space between time and first nan
             # eg: '0.0000nan' --> 0.0000, 'nan'
@@ -248,15 +251,49 @@ def load_file(fname):
     return header,data
 
 #------------------------------------------------------------------------
+def write_file(fname, header_list_d, data_rows_nd):
+    """ creates a csv file from:
+           header_list_d
+           data_rows_n[time][datafield]
+    """
+    
+    logging.info('  write_file:' + fname)
+    f = open(fname, 'w')
+
+    try:
+        writer = csv.writer(f)
+        writer.writerow(header_list_d)
+        for row in range(data_rows_nd.shape[0]):
+            writer.writerow(data_rows_nd[row,:])
+    finally:
+        f.close()
+    
+    logging.info(str(data_rows_nd.shape[0]) + ' rows written')
+
+
+#------------------------------------------------------------------------
 def filter_dir():
     """ applies filter to all csv files in a directory """
     # TODO
     pass
 
 #------------------------------------------------------------------------
-def filter_file(fname):
-    """ applies filter to given file and generates a new csv """
+def filter_file(fname, col_list):
+    """ Applies filter to given file for columns specified in col_list
+        and generates a new csv. New csv has first col and filtered 
+        col_list columns. 
+        
+        RETURNS:
+            header_list
+            filtered_float_nd
+    """
 
+    logging.info('filter_file:' + fname)
+
+    # load data in file
+    header_list, data_str_ary_nd = load_file(fname)
+
+    # init filter 
     my_filter = SmartFilter()
     lowcut  = 1
     highcut = 2
@@ -267,14 +304,15 @@ def filter_file(fname):
     my_filter.init_thresh(30)
     #my_filter.init_moving_ave(5)
     my_filter.plot()
-    logging.info('filtering file:' + fname)
-    header_list, data_string_ary_nd = load_file(fname)
     
-    # CALL FILTER CODE FOR SPECIFIED COLUMNS
-    for col in [20]: # 8 - pitch
-        x = np.array(data_string_ary_nd[:,col],float)
+    
+    # FILTER SPECIFIED COLUMNS
+    filtered_float_nd = np.zeros((data_str_ary_nd.shape[0],len(col_list)))
+    j = 0
+    for col in col_list: # 8 - pitch; 20 = smile?
+        x = np.array(data_str_ary_nd[:,col],float)
         x2 = np.nan_to_num(x)
-        t = np.array(data_string_ary_nd[:,0],float)
+        t = np.array(data_str_ary_nd[:,0],float)
         # Sample rate and desired cutoff frequencies (in Hz).
         
         y = my_filter.apply(x2)
@@ -297,15 +335,21 @@ def filter_file(fname):
         plt.axis('tight')
         plt.legend(loc='upper left')
         
+        filtered_float_nd[:,j] = y
+        plt.show() 
+        j += 1
+        
+    return header_list[col_list], filtered_float_nd
     
-        plt.show()        
-
+    
 #------------------------------------------------------------------------
 def do_all():
     pass
 
 #=============================================================================
 if __name__ == '__main__':
-    filter_file('example/2016-03-16_10-05-49-922-annabanana.new.csv')
-    
+    col_list = [20] # 8 - pitch; 20 = smile?
+    header_list, filtered_float_nd = filter_file(
+        'example/2016-03-16_10-05-49-922-annabanana.new.csv', col_list)
+    write_file('annabanana.out.csv',  header_list, filtered_float_nd)
     #filter_file('example/out_avg.csv')
