@@ -43,14 +43,11 @@ class Sync:
         
         self.X_thresh = []
         self.Y_thresh = []
-        self.synchrony = 0.    
-        self.x_rise_cnt = 0
+ 
         self.THRESH = 50.
     
     def calculate_sync(self, max_time_shift_=37):
 
-        synchrony_value = 0.0
-        self.x_rise_cnt = 0 # the number of rising edges in X_thresh
         
         # threshold X and Y
         #self.X_thresh = (X_ > THRESH_).astype(int)
@@ -71,22 +68,58 @@ class Sync:
             else:
                 self.Y_thresh[t] = y > self.THRESH
                 
-        # cycle over rising edges in X
+        # find rising edges in X
+        x_rise_cnt = 0 # the number of rising edges in X_thresh        
+        x_rising_edges = [] # list of times where there is a rising edge
         x_last = 0
         for t, x in enumerate (self.X_thresh):
             # is it a rising edge
             if ( (x_last == 0) and (x == 1) ):
-                self.x_rise_cnt += 1
+                x_rise_cnt += 1
+                x_rising_edges.append(t)
  
                 logging.debug('rising edge at t :' + str(t))
-                logging.debug('rising edge cnt:' + str(self.x_rise_cnt))
+                logging.debug('rising edge cnt:' + str(x_rise_cnt))
             x_last = x
             
-        # if there is positive region in Y increase count
+        # find rising edges in Y
+        y_rise_cnt = 0
+        y_rising_edges = []
+        y_last = 0
+        for t, y in enumerate (self.Y_thresh):
+            # is it a rising edge
+            if ( (y_last == 0) and (y == 1) ):
+                y_rise_cnt += 1
+                
+                y_rising_edges.append(t)
+ 
+                logging.debug('y rising edge at t :' + str(t))
+                logging.debug('y rising edge cnt:' + str(y_rise_cnt))
+            y_last = y
+            
+        # count y follows x
+        shared_cnt = 0
+        for t in x_rising_edges:
+            window = self.Y_thresh[t:t+max_time_shift_]
+            window_is_one = (window == 1) # just to make sure that nan does not give positive
+            if np.any(window_is_one):
+                shared_cnt += 1
+
+        y_sync = float(shared_cnt) / x_rise_cnt
+
+
+        # count x follows y
+        shared_cnt = 0
+        for t in y_rising_edges:
+            window = self.X_thresh[t:t+max_time_shift_]
+            window_is_one = (window == 1) # just to make sure that nan does not give positive
+            if np.any(window_is_one):
+                shared_cnt += 1
+
+        x_sync = float(shared_cnt) / y_rise_cnt
+
         
-
-
-        return synchrony_value
+        return x_sync, y_sync
 
     def plot(self):
         # Sample rate and desired cutoff frequencies (in Hz).
@@ -151,17 +184,23 @@ class TestSync(unittest.TestCase):
     
     def test_calculate_sync_simple(self):
         print("\n...testing calculate_sync(...)")
-        
+
+        # TEST 1
+        # TODO - make slightly more complex, add a few nans, verify that sync is correct
         X = np.array([0,.5, 60, 1, 5, 100, 23, 10])
         Y = np.array([0,.5, .7, 1, 5, 45, 23, 100])
         time = np.array([0,1,2,3,4,5,6,7])
         
-        my_sync = Sync()
+        my_sync = Sync(X, Y)
 
-        
-        synchrony = my_sync.calculate_sync(X, Y,THRESH_=5)
+        my_sync.THRESH = 5
+        x_sync, y_sync = my_sync.calculate_sync()
         my_sync.plot()
         print(my_sync)
+        
+        #assert(x_sync == expected value)
+
+        # TEST 2
         
         #print('Synchrony: ', synchrony)
         #pause = input( synchrony)
@@ -238,7 +277,8 @@ def load_file(fname):
 #------------------------------------------------------------------------
 def do_all():
     my_test = TestSync()
-    my_test.test_calculate_sync()
+    my_test.test_calculate_sync_simple()
+    #my_test.test_calculate_sync()
 
 #=============================================================================
 if __name__ == '__main__':
