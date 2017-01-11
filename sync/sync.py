@@ -34,26 +34,42 @@ class Sync:
     
     """
     
-    def __init__(self):
+    def __init__(self, X_, Y_):
         self.SAMPLE_RATE = 15
-        self.X = []
-        self.Y = []
+        self.X = np.array(X_)
+        self.Y = np.array(Y_)
+        
+        assert (len(X_) == len(Y_)), 'array sizes are different'
+        
         self.X_thresh = []
         self.Y_thresh = []
         self.synchrony = 0.    
         self.x_rise_cnt = 0
+        self.THRESH = 50.
     
-    
-    def calculate_sync(self,X_, Y_, THRESH_=50, max_time_shift_=37):
+    def calculate_sync(self, max_time_shift_=37):
 
         synchrony_value = 0.0
         self.x_rise_cnt = 0 # the number of rising edges in X_thresh
-        self.X = np.array(X_)
-        self.Y = np.array(Y_)
         
         # threshold X and Y
-        self.X_thresh = (X_ > THRESH_).astype(int)
-        self.Y_thresh = (Y_ > THRESH_).astype(int)
+        #self.X_thresh = (X_ > THRESH_).astype(int)
+        #self.Y_thresh = (Y_ > THRESH_).astype(int)
+
+        self.X_thresh = np.zeros_like(self.X, float)
+        for t, x in enumerate(self.X):
+            if np.isnan(x): 
+                self.X_thresh[t] = np.nan
+            else:
+                self.X_thresh[t] = x > self.THRESH
+                
+        
+        self.Y_thresh = np.zeros_like(self.Y, float)
+        for t, y in enumerate(self.Y):
+            if np.isnan(y): 
+                self.Y_thresh[t] = np.nan
+            else:
+                self.Y_thresh[t] = y > self.THRESH
                 
         # cycle over rising edges in X
         x_last = 0
@@ -79,18 +95,35 @@ class Sync:
 
         time = np.array(range(len(self.X)),float) / self.SAMPLE_RATE
         
-        plt.subplot(211)
+        plt.subplot(221)
         plt.plot(time, self.X)
         plt.xlabel('Time (sec)')
         plt.title('X')
+        plt.axhline(y=self.THRESH)
         plt.grid()
 
-        plt.subplot(212)
-        plt.scatter(time, self.X_thresh)
+        plt.subplot(222)
+        plt.plot(time, self.X_thresh)
+        plt.fill_between(time, 0, self.X_thresh, where=self.X_thresh >= 0, facecolor='green', interpolate=True)
         plt.title('X_thresh')
         plt.grid()
+
+        plt.subplot(223)
+        plt.plot(time, self.Y)
+        plt.xlabel('Time (sec)')
+        plt.title('Y')
+        plt.axhline(y=self.THRESH)
+        plt.grid()
+
+        plt.subplot(224)
+        plt.plot(time, self.Y_thresh)
+        plt.fill_between(time, 0, self.Y_thresh, where=self.Y_thresh >= 0, facecolor='green', interpolate=True)
+        plt.title('Y_thresh')
+        plt.grid()
         
+        plt.tight_layout()
         plt.show()      
+
 
     def __str__(self):
         s = "Syncrony: "
@@ -116,7 +149,7 @@ class TestSync(unittest.TestCase):
         print("\n...testing init(...)")
         pass
     
-    def test_calculate_sync(self):
+    def test_calculate_sync_simple(self):
         print("\n...testing calculate_sync(...)")
         
         X = np.array([0,.5, 60, 1, 5, 100, 23, 10])
@@ -132,6 +165,33 @@ class TestSync(unittest.TestCase):
         
         #print('Synchrony: ', synchrony)
         #pause = input( synchrony)
+        
+    def test_calculate_sync(self):
+        print("\n...testing calculate_sync(...)")
+        
+        
+        col_list = [20] # 8 - pitch; 20 = smile?
+
+        header_list, I_data_str_ary_nd = load_file(
+            'example/2016-03-16_10-05-49-922-I-T-annabanana.csv')
+        X = np.array(I_data_str_ary_nd[:,20], float)        
+
+        header_list, W_data_str_ary_nd = load_file(
+            'example/2016-03-16_10-05-49-922-W-T-tarples.csv')
+
+        Y = np.array(W_data_str_ary_nd[:,20],float)
+        smaller_N = np.minimum(len(X), len(Y)) 
+        
+        my_sync = Sync(X[:smaller_N],Y[:smaller_N])
+        my_sync.THRESH = 5
+        
+        synchrony = my_sync.calculate_sync()
+        my_sync.plot()
+        print(my_sync)
+        
+        #print('Synchrony: ', synchrony)
+        #pause = input( synchrony)
+
 
 
     def tearDown(self):
@@ -143,7 +203,36 @@ class TestSync(unittest.TestCase):
         print("\n...........unit testing of class SimpleFilter complete..............\n")
         
 #------------------------------------------------------------------------
-
+def load_file(fname):
+    """ loads a csv file and places into a 2D np string array.
+        RETURNS:
+           header
+           data[time, datafield]
+    """
+    
+    logging.info('  loading file:' + fname)
+    f = open(fname, 'rt')
+    data = []
+    try:
+        reader = csv.reader(f)
+        header = np.array(next(reader)[:-1]) # Affectiva has a extra empty column
+        for row in reader:
+            # deal with Affectiva 'bug' - no space between time and first nan
+            # eg: '0.0000nan' --> 0.0000, 'nan'
+            if('nan' in row[0]):
+                row.insert(1,'nan')
+                row[0] = row[0][:-3] # chop off last three chars
+            data.append(np.array(row[:-1])) # Affectiva has a extra empty column
+            #data.append(row)
+    finally:
+        f.close()
+    
+    # data[time, datafield] # all data is strings, even numbers
+    data = np.array(data) 
+    print(data.shape)
+    print(header)
+    
+    return header,data
     
     
 #------------------------------------------------------------------------
