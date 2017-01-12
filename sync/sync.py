@@ -95,6 +95,8 @@ class Sync:
                x2y_sync, y2x_sync
         """
         
+        logging.debug('...calc_edge_trig_sync()')
+            
         self.quantize_data(THRESH_)
                 
         # find rising edges in X
@@ -103,11 +105,10 @@ class Sync:
         for t, x in enumerate (self.X_quant):
             # is it a rising edge
             if ( (x_last == 0) and (x == 1) ):
-                x_rising_edges.append(t)
- 
-                logging.debug('x rising edge at t :' + str(t))
-                logging.debug('x rising edge cnt:' + str(len(x_rising_edges)))
+                x_rising_edges.append(t) 
+                #logging.debug('x rising edge at t :' + str(t))
             x_last = x
+        logging.debug('x rising edge cnt:' + str(len(x_rising_edges)))
             
         # find rising edges in Y
         y_rising_edges = []
@@ -115,12 +116,11 @@ class Sync:
         for t, y in enumerate (self.Y_quant):
             # is it a rising edge
             if ( (y_last == 0) and (y == 1) ):                
-                y_rising_edges.append(t)
- 
-                logging.debug('y rising edge at t :' + str(t))
-                logging.debug('y rising edge cnt:' + str(len(y_rising_edges)))
+                y_rising_edges.append(t) 
+                #logging.debug('y rising edge at t :' + str(t))
             y_last = y
-            
+        logging.debug('y rising edge cnt:' + str(len(y_rising_edges)))
+        
         # count y follows x
         x2y_shared_cnt = 0
         y_last_abs = 0
@@ -134,9 +134,10 @@ class Sync:
                 y_last_abs = t + np.where(window_is_one == 1)[0][0]
 
         logging.debug('x2y_shared_cnt :' + str(x2y_shared_cnt))
-
-        x2y_sync = float(x2y_shared_cnt) / len(x_rising_edges)
-
+        if len(x_rising_edges):
+            x2y_sync = float(x2y_shared_cnt) / len(x_rising_edges)
+        else:
+            x2y_sync = np.nan
 
         # count x follows y
         y2x_shared_cnt = 0
@@ -150,8 +151,12 @@ class Sync:
                 y2x_shared_cnt += 1
                 x_last_abs = t + np.where(window_is_one == 1)[0][0]
 
-        logging.debug('x2y_shared_cnt :' + str(y2x_shared_cnt))
-        y2x_sync = float(y2x_shared_cnt) / len(y_rising_edges)
+        logging.debug('y2x_shared_cnt :' + str(y2x_shared_cnt))
+        if len(y_rising_edges):
+            y2x_sync = float(y2x_shared_cnt) / len(y_rising_edges)
+        else:
+            y2x_sync = np.nan
+
 
         sync_data = (x2y_sync, y2x_sync, x_rising_edges, y_rising_edges, 
                      x2y_shared_cnt, y2x_shared_cnt)
@@ -329,13 +334,22 @@ def load_file(fname):
     # data[time, datafield] # all data is strings, even numbers
     data = np.array(data) 
     print(data.shape)
-    print(header)
+    #print(header)
     
     return header,data
     
     
 #------------------------------------------------------------------------
-def do_all():
+def do_all_old():
+    """ outputs a csv file:
+    
+    dyad_root dim0 dim1 dim2 ... dimN
+    '2016-03-16_10-05-49-922
+    
+    # get file lists
+    
+    # for each pair of files
+    
         col_list = [20] # 8 - pitch; 20 = smile?
 
         header_list, I_data_str_ary_nd = load_file(
@@ -355,11 +369,126 @@ def do_all():
                                                 max_time_shift_=37)
         print(my_sync.print_sync_data(sync_data)) 
         my_sync.plot()
+    
+    """
+    pass
+
+
+
+
+#------------------------------------------------------------------------
+def generate_hash_maps(filename):
+    """ given a csv file (ResponseTimeIntervals.csv) which contains list of
+        all I filenames and Q1 and Q2 times,
+        creates maps, rootname,Q2
+    ---------------------------
+    q2_map    : this is {rootname :Q2_value} Q2_value = 'string in seconds'
+    truth_map : this is {rootname :truth_value} truth_value = {'T','B'}
+    """
+    
+    logging.info('...generate_hash_maps(' + filename + ')')
+    
+    f_in = open(filename)
+    csv_f = csv.reader(f_in)
+    next(csv_f)
+    q2_map={}
+    truth_map={}
+    for row in csv_f:
+        # row[0] is rootname; row[3] is Q2 start; row[6] is truth_val
+        # all are saved as strings
+        truth_map[row[0]] = row[6]
+        q2_map[row[0]] = row[3]
         
+    return q2_map,truth_map
+
+#------------------------------------------------------------------------
+def do_all(path='example'):
+    """
+    Calculate synchrony for every file pair in a directory.
+    NEED:
+        ResponseTimeIntervals-data.csv
+    OUTPUT:
+        output.csv:
+        
+    fileroot  truth_value smile-x2ysync smile-x2ysync lipcornerdepressor_x2ysync lipcornerdepressor_y2xsync
+    '2016-12-15_11-24-43-478', 'T', 0.23, 0.54, 0.01, 0.03
+    """
+    
+    THRESH = 20
+    COL_LIST = [20,26]
+    
+    q2_map, truth_map = generate_hash_maps(path + '/ResponseTimeIntervals-data.csv')
+    
+    files = glob.glob(path + "/*.csv")
+    files.sort() # the file list snow mirrors ResponseTimeIntervals-data.cs
+    logging.info(str(len(files)) + ' csv files found')
+
+    f_out = open('output/out.csv','w')
+    wr = csv.writer(f_out)
+    header_written = False
+
+    # 
+    for rootname in q2_map:
+        #print(rootname)
+        # find the two filenames for the given root
+        I_filename_root = rootname + '-I-'
+        W_filename_root = rootname + '-W-'
+        I_filename = [s for s in files if I_filename_root in s]
+        W_filename = [s for s in files if W_filename_root in s] 
+        '''
+        if(len(I_filename) == 0):
+            logging.warning('No Interrogator file found for root: ' + rootname) 
+
+        if(len(W_filename) == 0):
+            logging.warning('No Witness file found for root: ' + rootname) 
+        '''
+        # GET DATA
+        if(I_filename != [] and W_filename != []):
+            print(I_filename[0])
+            print(W_filename[0])
+            
+            header_list, I_data_str_ary_nd = load_file(I_filename[0])
+            header_list, W_data_str_ary_nd = load_file(W_filename[0])
+            
+            # write output header
+            if (header_written == False):
+                header_written = True
+                wr_header = ['rootname', 'truth_val']
+                for col in COL_LIST:
+                    wr_header += [header_list[col] + '-x2y_sync']
+                    wr_header += [header_list[col] + '-y2x_sync']
+                    wr_header += [header_list[col] + '-x2y_sync2']
+                    wr_header += [header_list[col] + '-y2x_sync2']
+                wr.writerow(wr_header)
+                
+            wr_row = [rootname, truth_map[rootname]]
+            # CALC SYNC OVER COLs
+            for col in COL_LIST:                  
+                
+                I = np.array(I_data_str_ary_nd[:,col], float)        
+                W = np.array(W_data_str_ary_nd[:,col],float)
+                
+                smaller_N = np.minimum(len(I), len(W))
+                my_sync = Sync(W[:smaller_N], I[:smaller_N])
+                sync_data = my_sync.calc_edge_trig_sync(THRESH_=THRESH,  
+                                                        max_time_shift_=37)   
+                print(my_sync.print_sync_data(sync_data))
+                
+                (x2y_sync, y2x_sync, x_rising_edges, y_rising_edges, 
+                                     x2y_shared_cnt, y2x_shared_cnt) = sync_data               
+                #my_sync.plot()
+                tot_rise_edges = (len(x_rising_edges) + len(y_rising_edges))
+                x2y_sync2 = x2y_shared_cnt / tot_rise_edges
+                y2x_sync2 = y2x_shared_cnt / tot_rise_edges
+                wr_row += [str(x2y_sync), str(y2x_sync), str(x2y_sync2), 
+                           str(y2x_sync2)]  
+                
+            wr.writerow(wr_row)
+    f_out.close()
 
 
 #=============================================================================
 if __name__ == '__main__':
     print('running main')
-    unittest.main()
+    #unittest.main()
     do_all()
