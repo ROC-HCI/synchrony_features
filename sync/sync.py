@@ -157,9 +157,16 @@ class Sync:
         else:
             y2x_sync = np.nan
 
+        tot_rise_cnt = (len(x_rising_edges) + len(y_rising_edges))
+        if (tot_rise_cnt != 0):
+            x2y_sync2 = float(x2y_shared_cnt) / tot_rise_cnt
+            y2x_sync2 = float(y2x_shared_cnt) / tot_rise_cnt
+        else:
+            x2y_sync2 = np.nan
+            y2x_sync2 = np.nan            
 
-        sync_data = (x2y_sync, y2x_sync, x_rising_edges, y_rising_edges, 
-                     x2y_shared_cnt, y2x_shared_cnt)
+        sync_data = (x2y_sync, y2x_sync, x2y_sync2, y2x_sync2,  x_rising_edges, 
+                     y_rising_edges, x2y_shared_cnt, y2x_shared_cnt)
         return sync_data
 
     #-------------------------------
@@ -201,14 +208,17 @@ class Sync:
         plt.tight_layout()
         plt.show()      
         
-    def print_sync_data(self, sync_data):
+    @staticmethod
+    def print_sync_data(sync_data):
 
-        (x2y_sync, y2x_sync, x_rising_edges, y_rising_edges, 
-                             x2y_shared_cnt, y2x_shared_cnt) = sync_data       
+        (x2y_sync, y2x_sync, x2y_sync2, y2x_sync2,  x_rising_edges, 
+                     y_rising_edges, x2y_shared_cnt, y2x_shared_cnt) = sync_data      
         s = ''
         s += 'synchrony data:'
         s += '\n\tx2y_sync: ' + str(x2y_sync)
         s += '\n\ty2x_sync: ' + str(y2x_sync)
+        s += '\n\tx2y_sync2: ' + str(x2y_sync2)
+        s += '\n\ty2x_sync2: ' + str(y2x_sync2)
         s += '\n\tx_rising_edges: ' + str(len(x_rising_edges))
         s += '\n\ty_rising_edges: ' + str(len(y_rising_edges)) 
         s += '\n\tx2y_shared_cnt: ' + str(x2y_shared_cnt)
@@ -255,8 +265,8 @@ class TestSync(unittest.TestCase):
                                                 max_time_shift_=37)
         #my_sync.plot()
         print(my_sync.print_sync_data(sync_data)) 
-        (x2y_sync, y2x_sync, x_rising_edges, y_rising_edges, 
-                             x2y_shared_cnt, y2x_shared_cnt) = sync_data
+        (x2y_sync, y2x_sync, x2y_sync2, y2x_sync2,  x_rising_edges, 
+                     y_rising_edges, x2y_shared_cnt, y2x_shared_cnt) = sync_data
         self.assertAlmostEqual(x2y_sync,0.5, places = 2)
         self.assertAlmostEqual(y2x_sync,0.0, places = 2)
         self.assertEqual(len(x_rising_edges),2)
@@ -414,7 +424,7 @@ def do_all(path='example'):
     '2016-12-15_11-24-43-478', 'T', 0.23, 0.54, 0.01, 0.03
     """
     
-    THRESH = 20
+    THRESH = 30
     COL_LIST = [20,26]
     
     q2_map, truth_map = generate_hash_maps(path + '/ResponseTimeIntervals-data.csv')
@@ -423,7 +433,7 @@ def do_all(path='example'):
     files.sort() # the file list snow mirrors ResponseTimeIntervals-data.cs
     logging.info(str(len(files)) + ' csv files found')
 
-    f_out = open('output/out.csv','w')
+    f_out = open('output/out_thresh' + str(THRESH) + '.csv','w')
     wr = csv.writer(f_out)
     header_written = False
 
@@ -453,7 +463,7 @@ def do_all(path='example'):
             # write output header
             if (header_written == False):
                 header_written = True
-                wr_header = ['rootname', 'truth_val']
+                wr_header = ['rootname', 'Timestamp', 'truth_val']
                 for col in COL_LIST:
                     wr_header += [header_list[col] + '-x2y_sync']
                     wr_header += [header_list[col] + '-y2x_sync']
@@ -461,7 +471,8 @@ def do_all(path='example'):
                     wr_header += [header_list[col] + '-y2x_sync2']
                 wr.writerow(wr_header)
                 
-            wr_row = [rootname, truth_map[rootname]]
+            wr_row_q1 = [rootname, 'Q1', truth_map[rootname]]
+            wr_row_q2 = [rootname, 'Q2', truth_map[rootname]]
             # CALC SYNC OVER COLs
             for col in COL_LIST:                  
                 
@@ -469,21 +480,34 @@ def do_all(path='example'):
                 W = np.array(W_data_str_ary_nd[:,col],float)
                 
                 smaller_N = np.minimum(len(I), len(W))
-                my_sync = Sync(W[:smaller_N], I[:smaller_N])
-                sync_data = my_sync.calc_edge_trig_sync(THRESH_=THRESH,  
+                q2_index = 15 * int(float(q2_map[rootname]))
+                q1_sync = Sync(W[:q2_index], I[:q2_index])
+                q2_sync = Sync(W[q2_index:smaller_N], I[q2_index:smaller_N])
+                
+                sync_data_q1 = q1_sync.calc_edge_trig_sync(THRESH_=THRESH,  
                                                         max_time_shift_=37)   
-                print(my_sync.print_sync_data(sync_data))
+                sync_data_q2 = q2_sync.calc_edge_trig_sync(THRESH_=THRESH,  
+                                                        max_time_shift_=37)   
+                print(Sync.print_sync_data(sync_data_q1))
+                print(Sync.print_sync_data(sync_data_q2))
                 
-                (x2y_sync, y2x_sync, x_rising_edges, y_rising_edges, 
-                                     x2y_shared_cnt, y2x_shared_cnt) = sync_data               
+                (x2y_sync, y2x_sync, x2y_sync2, y2x_sync2,  x_rising_edges, 
+                     y_rising_edges, x2y_shared_cnt, y2x_shared_cnt) = sync_data_q1             
                 #my_sync.plot()
-                tot_rise_edges = (len(x_rising_edges) + len(y_rising_edges))
-                x2y_sync2 = x2y_shared_cnt / tot_rise_edges
-                y2x_sync2 = y2x_shared_cnt / tot_rise_edges
-                wr_row += [str(x2y_sync), str(y2x_sync), str(x2y_sync2), 
+
+                wr_row_q1 += [str(x2y_sync), str(y2x_sync), str(x2y_sync2), 
                            str(y2x_sync2)]  
+
+                (x2y_sync, y2x_sync, x2y_sync2, y2x_sync2,  x_rising_edges, 
+                     y_rising_edges, x2y_shared_cnt, y2x_shared_cnt) = sync_data_q2             
+                #my_sync.plot()
+
+                wr_row_q2 += [str(x2y_sync), str(y2x_sync), str(x2y_sync2), 
+                           str(y2x_sync2)]  
+
                 
-            wr.writerow(wr_row)
+            wr.writerow(wr_row_q1)
+            wr.writerow(wr_row_q2)
     f_out.close()
 
 
