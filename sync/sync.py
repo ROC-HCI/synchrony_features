@@ -86,7 +86,10 @@ class Sync:
             the "edge triggered algorithm.  In turn treats X as the sender
             and Y as the receiver, then Y as the sender, X as the receiver.
             For each sender rising edge, checks if there is any positive 
-            in Y in the max_time_shift following the time at X rising edge 
+            in Y in the max_time_shift following the time at X rising edge.
+            
+            Maybe it is better to set up an ignore region in the sender
+            after each share match (if y_last > t, ignore t)?
             --------------------------
             return value: 
                x2y_sync, y2x_sync
@@ -102,8 +105,8 @@ class Sync:
             if ( (x_last == 0) and (x == 1) ):
                 x_rising_edges.append(t)
  
-                logging.debug('rising edge at t :' + str(t))
-                logging.debug('rising edge cnt:' + str(len(x_rising_edges)))
+                logging.debug('x rising edge at t :' + str(t))
+                logging.debug('x rising edge cnt:' + str(len(x_rising_edges)))
             x_last = x
             
         # find rising edges in Y
@@ -120,27 +123,39 @@ class Sync:
             
         # count y follows x
         x2y_shared_cnt = 0
+        y_last_abs = 0
         for t in x_rising_edges:
-            window = self.Y_quant[t:t+max_time_shift_]
+            # make sure to ignore previous y==1 in the windows start position
+            start_index = np.maximum(t,y_last_abs+1) 
+            window = self.Y_quant[start_index:t+max_time_shift_]
             window_is_one = (window == 1) # just to make sure that nan does not give positive
             if np.any(window_is_one):
                 x2y_shared_cnt += 1
+                y_last_abs = t + np.where(window_is_one == 1)[0][0]
+
+        logging.debug('x2y_shared_cnt :' + str(x2y_shared_cnt))
 
         x2y_sync = float(x2y_shared_cnt) / len(x_rising_edges)
 
 
         # count x follows y
         y2x_shared_cnt = 0
+        x_last_abs = 0
         for t in y_rising_edges:
-            window = self.X_quant[t:t+max_time_shift_]
+            # make sure to ignore previous x==1 in the windows start position
+            start_index = np.maximum(t,x_last_abs+1) 
+            window = self.X_quant[start_index:t+max_time_shift_]
             window_is_one = (window == 1) # just to make sure that nan does not give positive
             if np.any(window_is_one):
                 y2x_shared_cnt += 1
+                x_last_abs = t + np.where(window_is_one == 1)[0][0]
 
+        logging.debug('x2y_shared_cnt :' + str(y2x_shared_cnt))
         y2x_sync = float(y2x_shared_cnt) / len(y_rising_edges)
 
-        
-        return x2y_sync, y2x_sync
+        sync_data = (x2y_sync, y2x_sync, x_rising_edges, y_rising_edges, 
+                     x2y_shared_cnt, y2x_shared_cnt)
+        return sync_data
 
     #-------------------------------
     def plot(self):
@@ -180,6 +195,20 @@ class Sync:
         
         plt.tight_layout()
         plt.show()      
+        
+    def print_sync_data(self, sync_data):
+
+        (x2y_sync, y2x_sync, x_rising_edges, y_rising_edges, 
+                             x2y_shared_cnt, y2x_shared_cnt) = sync_data       
+        s = ''
+        s += 'synchrony data:'
+        s += '\n\tx2y_sync: ' + str(x2y_sync)
+        s += '\n\ty2x_sync: ' + str(y2x_sync)
+        s += '\n\tx_rising_edges: ' + str(len(x_rising_edges))
+        s += '\n\ty_rising_edges: ' + str(len(y_rising_edges)) 
+        s += '\n\tx2y_shared_cnt: ' + str(x2y_shared_cnt)
+        s += '\n\ty2x_shared_cnt: ' + str(y2x_shared_cnt)
+        return s
 
     #-------------------------------
     def __str__(self):
@@ -217,12 +246,22 @@ class TestSync(unittest.TestCase):
         
         my_sync = Sync(X, Y)
 
-        x2y_sync, y2x_sync = my_sync.calc_edge_trig_sync(THRESH_=50, 
-                                                     max_time_shift_=37)
-        my_sync.plot()
+        sync_data = my_sync.calc_edge_trig_sync(THRESH_=50,  
+                                                max_time_shift_=37)
+        #my_sync.plot()
+        print(my_sync.print_sync_data(sync_data)) 
+        (x2y_sync, y2x_sync, x_rising_edges, y_rising_edges, 
+                             x2y_shared_cnt, y2x_shared_cnt) = sync_data
+        self.assertAlmostEqual(x2y_sync,0.5, places = 2)
+        self.assertAlmostEqual(y2x_sync,0.0, places = 2)
+        self.assertEqual(len(x_rising_edges),2)
+        self.assertEqual(len(y_rising_edges),1)
+        self.assertEqual(x2y_shared_cnt,1)
+        self.assertEqual(y2x_shared_cnt,0)
+        
+        
         print(my_sync)
         
-        #assert(x_sync == expected value)
 
         # TEST 2
         
@@ -248,16 +287,11 @@ class TestSync(unittest.TestCase):
         my_sync = Sync(X[:smaller_N],Y[:smaller_N])
         my_sync.THRESH = 5
         
-        x2y_sync, y2x_sync = my_sync.calc_edge_trig_sync(THRESH_=50, 
-                                                         max_time_shift_=37)
-
-        my_sync.plot()
-        print(my_sync)
+        sync_data = my_sync.calc_edge_trig_sync(THRESH_=10,  
+                                                max_time_shift_=37)
+        print(my_sync.print_sync_data(sync_data)) 
+        #my_sync.plot()
         
-        #print('Synchrony: ', synchrony)
-        #pause = input( synchrony)
-
-
 
     def tearDown(self):
         """ runs after each test """
@@ -302,9 +336,27 @@ def load_file(fname):
     
 #------------------------------------------------------------------------
 def do_all():
-    my_test = TestSync()
-    my_test.test_calculate_sync_simple()
-    #my_test.test_calculate_sync()
+        col_list = [20] # 8 - pitch; 20 = smile?
+
+        header_list, I_data_str_ary_nd = load_file(
+            'example/2016-03-16_10-05-49-922-I-T-annabanana.csv')
+        X = np.array(I_data_str_ary_nd[:,20], float)        
+
+        header_list, W_data_str_ary_nd = load_file(
+            'example/2016-03-16_10-05-49-922-W-T-tarples.csv')
+
+        Y = np.array(W_data_str_ary_nd[:,20],float)
+        smaller_N = np.minimum(len(X), len(Y)) 
+        
+        my_sync = Sync(X[:smaller_N],Y[:smaller_N])
+        my_sync.THRESH = 5
+        
+        sync_data = my_sync.calc_edge_trig_sync(THRESH_=10,  
+                                                max_time_shift_=37)
+        print(my_sync.print_sync_data(sync_data)) 
+        my_sync.plot()
+        
+
 
 #=============================================================================
 if __name__ == '__main__':
