@@ -424,8 +424,9 @@ def do_all(path='example'):
     '2016-12-15_11-24-43-478', 'T', 0.23, 0.54, 0.01, 0.03
     """
     
-    THRESH = 30
-    COL_LIST = [20,26]
+    THRESH = 10
+    #COL_LIST = [20,26] # smile, lipCornerDepressor
+    COL_LIST = range(9,53) 
     
     q2_map, truth_map = generate_hash_maps(path + '/ResponseTimeIntervals-data.csv')
     
@@ -465,10 +466,10 @@ def do_all(path='example'):
                 header_written = True
                 wr_header = ['rootname', 'Timestamp', 'truth_val']
                 for col in COL_LIST:
-                    wr_header += [header_list[col] + '-x2y_sync']
-                    wr_header += [header_list[col] + '-y2x_sync']
-                    wr_header += [header_list[col] + '-x2y_sync2']
-                    wr_header += [header_list[col] + '-y2x_sync2']
+                    wr_header += [header_list[col] + '-w2i_sync']
+                    wr_header += [header_list[col] + '-i2w_sync']
+                    wr_header += [header_list[col] + '-w2i_sync2']
+                    wr_header += [header_list[col] + '-i2w_sync2']
                 wr.writerow(wr_header)
                 
             wr_row_q1 = [rootname, 'Q1', truth_map[rootname]]
@@ -491,19 +492,19 @@ def do_all(path='example'):
                 print(Sync.print_sync_data(sync_data_q1))
                 print(Sync.print_sync_data(sync_data_q2))
                 
-                (x2y_sync, y2x_sync, x2y_sync2, y2x_sync2,  x_rising_edges, 
-                     y_rising_edges, x2y_shared_cnt, y2x_shared_cnt) = sync_data_q1             
+                (w2i_sync, i2w_sync, w2i_sync2, i2w_sync2,  w_rising_edges, 
+                     i_rising_edges, w2i_shared_cnt, i2w_shared_cnt) = sync_data_q1             
                 #my_sync.plot()
 
-                wr_row_q1 += [str(x2y_sync), str(y2x_sync), str(x2y_sync2), 
-                           str(y2x_sync2)]  
+                wr_row_q1 += [str(w2i_sync), str(i2w_sync), str(w2i_sync2), 
+                           str(i2w_sync2)]  
 
-                (x2y_sync, y2x_sync, x2y_sync2, y2x_sync2,  x_rising_edges, 
-                     y_rising_edges, x2y_shared_cnt, y2x_shared_cnt) = sync_data_q2             
+                (w2i_sync, i2w_sync, w2i_sync2, i2w_sync2,  w_rising_edges, 
+                     i_rising_edges, w2i_shared_cnt, i2w_shared_cnt) = sync_data_q2             
                 #my_sync.plot()
 
-                wr_row_q2 += [str(x2y_sync), str(y2x_sync), str(x2y_sync2), 
-                           str(y2x_sync2)]  
+                wr_row_q2 += [str(w2i_sync), str(i2w_sync), str(w2i_sync2), 
+                           str(i2w_sync2)]  
 
                 
             wr.writerow(wr_row_q1)
